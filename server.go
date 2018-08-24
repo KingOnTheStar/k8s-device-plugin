@@ -34,10 +34,26 @@ type NvidiaDevicePlugin struct {
 	server *grpc.Server
 }
 
+// Test: A stub, just provides a virtual gpu status
+func testGetDevices() []*pluginapi.Device {
+	n := uint(8)
+
+	var devs []*pluginapi.Device
+	for i := uint(0); i < n; i++ {
+		devs = append(devs, &pluginapi.Device{
+			ID:     "GPU-" + string(i),
+			Health: pluginapi.Healthy,
+		})
+	}
+
+	return devs
+}
+
 // NewNvidiaDevicePlugin returns an initialized NvidiaDevicePlugin
 func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
 	return &NvidiaDevicePlugin{
-		devs:   getDevices(),
+		//devs:   getDevices(),
+		devs:   testGetDevices(),
 		socket: serverSock,
 
 		stop:   make(chan interface{}),
@@ -185,7 +201,7 @@ func (m *NvidiaDevicePlugin) cleanup() error {
 }
 
 func (m *NvidiaDevicePlugin) healthcheck() {
-	disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
+	/*disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
 	if disableHealthChecks == "all" {
 		disableHealthChecks = allHealthChecks
 	}
@@ -206,7 +222,7 @@ func (m *NvidiaDevicePlugin) healthcheck() {
 		case dev := <-xids:
 			m.unhealthy(dev)
 		}
-	}
+	}*/
 }
 
 // Serve starts the gRPC server and register the device plugin to Kubelet
