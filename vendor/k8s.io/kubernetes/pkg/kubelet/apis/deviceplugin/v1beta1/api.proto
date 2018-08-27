@@ -1,4 +1,4 @@
-// To regenerate api.pb.go run hack/update-device-plugin.sh
+// To regenerate api.pb.go run hack/update-generated-device-plugin.sh
 syntax = 'proto3';
 
 package v1beta1;
@@ -25,8 +25,10 @@ service Registration {
 }
 
 message DevicePluginOptions {
-        // Indicates if PreStartContainer call is required before each container start
+	// Indicates if PreStartContainer call is required before each container start
 	bool pre_start_required = 1;
+	// Wheather the Plugin needs use its own scheduler before allocating
+	bool pre_allocate_required = 2;
 }
 
 message RegisterRequest {
@@ -64,6 +66,10 @@ service DevicePlugin {
         // before each container start. Device plugin can run device specific operations
         // such as reseting the device before making devices available to the container
 	rpc PreStartContainer(PreStartContainerRequest) returns (PreStartContainerResponse) {}
+
+	// PreAllocate is called, if indicated by Device Plugin during registeration phase,
+	// it can do some work like deciding which devices to be allocated on a given Pod
+	rpc PreAllocate(PreAllocateRequest) returns (PreAllocateResponse) {}
 }
 
 // ListAndWatch returns a stream of List of Devices
@@ -97,6 +103,17 @@ message PreStartContainerRequest {
 
 // PreStartContainerResponse will be send by plugin in response to PreStartContainerRequest
 message PreStartContainerResponse {
+}
+
+// - PreAllocate request the devices number to decide which device to allocate
+message PreAllocateRequest {
+	int64 devicesNum = 1;
+	repeated string usableDevicesIDs = 2;
+}
+
+// PreAllocate just a list of devices IDs, kubelet will then call Allocate
+message PreAllocateResponse {
+	repeated string selectedDevicesIDs = 1;
 }
 
 // - Allocate is expected to be called during pod creation since allocation

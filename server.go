@@ -8,12 +8,12 @@ import (
 	"net"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
+	"strings"
 )
 
 const (
@@ -40,10 +40,56 @@ func testGetDevices() []*pluginapi.Device {
 
 	var devs []*pluginapi.Device
 	for i := uint(0); i < n; i++ {
-		devs = append(devs, &pluginapi.Device{
-			ID:     "GPU-" + string(i),
-			Health: pluginapi.Healthy,
-		})
+		switch i {
+		case 0:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a97691df",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 1:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 2:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff1",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 3:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff2",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 4:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff3",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 5:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff4",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 6:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff5",
+				Health: pluginapi.Healthy,
+			})
+			break
+		case 7:
+			devs = append(devs, &pluginapi.Device{
+				ID:     "GPU-92d93cd6-e41f-6884-6748-3738a976fff6",
+				Health: pluginapi.Healthy,
+			})
+			break
+		}
 	}
 
 	return devs
@@ -62,7 +108,10 @@ func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
 }
 
 func (m *NvidiaDevicePlugin) GetDevicePluginOptions(context.Context, *pluginapi.Empty) (*pluginapi.DevicePluginOptions, error) {
-	return &pluginapi.DevicePluginOptions{}, nil
+	return &pluginapi.DevicePluginOptions{
+		PreStartRequired:    false,
+		PreAllocateRequired: true,
+	}, nil
 }
 
 // dial establishes the gRPC communication with the registered device plugin.
@@ -190,6 +239,15 @@ func (m *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.Alloc
 
 func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreStartContainerRequest) (*pluginapi.PreStartContainerResponse, error) {
 	return &pluginapi.PreStartContainerResponse{}, nil
+}
+
+func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
+	selectedDevicesIDs := make([]string, request.DevicesNum)
+	selectedDevicesIDs[0] = "GPU-92d93cd6-e41f-6884-6748-3738a97691df"
+	selectedDevicesIDs[1] = "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef"
+	return &pluginapi.PreAllocateResponse{
+		SelectedDevicesIDs: selectedDevicesIDs,
+	}, nil
 }
 
 func (m *NvidiaDevicePlugin) cleanup() error {
