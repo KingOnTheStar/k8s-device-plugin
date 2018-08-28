@@ -185,6 +185,10 @@ func (m *NvidiaDevicePlugin) Register(kubeletEndpoint, resourceName string) erro
 		Version:      pluginapi.Version,
 		Endpoint:     path.Base(m.socket),
 		ResourceName: resourceName,
+		Options: &pluginapi.DevicePluginOptions{
+			PreStartRequired:    false,
+			PreAllocateRequired: true,
+		},
 	}
 
 	_, err = client.Register(context.Background(), reqt)
@@ -243,8 +247,10 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
 	selectedDevicesIDs := make([]string, request.DevicesNum)
-	selectedDevicesIDs[0] = "GPU-92d93cd6-e41f-6884-6748-3738a97691df"
-	selectedDevicesIDs[1] = "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef"
+	//selectedDevicesIDs[0] = "GPU-92d93cd6-e41f-6884-6748-3738a97691df"
+	//selectedDevicesIDs[1] = "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef"
+	selectedDevicesIDs[0] = request.UsableDevicesIDs[0]
+	selectedDevicesIDs[1] = request.UsableDevicesIDs[1]
 	return &pluginapi.PreAllocateResponse{
 		SelectedDevicesIDs: selectedDevicesIDs,
 	}, nil
