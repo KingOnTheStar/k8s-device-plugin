@@ -25,8 +25,9 @@ const (
 
 // NvidiaDevicePlugin implements the Kubernetes device plugin API
 type NvidiaDevicePlugin struct {
-	devs   []*pluginapi.Device
-	socket string
+	devs     []*pluginapi.Device
+	topology TopoInfo
+	socket   string
 
 	stop   chan interface{}
 	health chan *pluginapi.Device
@@ -97,10 +98,12 @@ func testGetDevices() []*pluginapi.Device {
 
 // NewNvidiaDevicePlugin returns an initialized NvidiaDevicePlugin
 func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
+	devicesIDsAndHealth, topo := getDevicesAndTopology()
+	log.Println("Test topology: ", topo)
 	return &NvidiaDevicePlugin{
-		//devs:   getDevices(),
-		devs:   testGetDevices(),
-		socket: serverSock,
+		devs:     devicesIDsAndHealth,
+		topology: topo,
+		socket:   serverSock,
 
 		stop:   make(chan interface{}),
 		health: make(chan *pluginapi.Device),
@@ -246,11 +249,51 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 }
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
-	selectedDevicesIDs := make([]string, request.DevicesNum)
+	var selectedDevicesIDs []string
 	//selectedDevicesIDs[0] = "GPU-92d93cd6-e41f-6884-6748-3738a97691df"
 	//selectedDevicesIDs[1] = "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef"
-	selectedDevicesIDs[0] = request.UsableDevicesIDs[0]
-	selectedDevicesIDs[1] = request.UsableDevicesIDs[1]
+	var usableTopoInfo TopoInfo
+	for _, edge := range m.topology.edges {
+		leftPointExist := false
+		rightPointExist := false
+		for _, usableDevID := range request.UsableDevicesIDs {
+			if usableDevID == edge.Dev1UUID {
+				leftPointExist = true
+			}
+			if usableDevID == edge.Dev2UUID {
+				rightPointExist = true
+			}
+		}
+		if leftPointExist && rightPointExist {
+			usableTopoInfo.edges = append(usableTopoInfo.edges, edge)
+		}
+	}
+	usableTopoInfo.TopoEdgeSort()
+	for _, edge := range usableTopoInfo.edges {
+		leftExisted := false
+		rightExisted := false
+		for _, id := range selectedDevicesIDs {
+			if id == edge.Dev1UUID {
+				leftExisted = true
+			}
+			if id == edge.Dev2UUID {
+				rightExisted = true
+			}
+		}
+		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
+			break
+		}
+		if !leftExisted {
+			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev1UUID)
+		}
+		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
+			break
+		}
+		if !rightExisted {
+			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev2UUID)
+		}
+	}
+
 	return &pluginapi.PreAllocateResponse{
 		SelectedDevicesIDs: selectedDevicesIDs,
 	}, nil
@@ -265,7 +308,7 @@ func (m *NvidiaDevicePlugin) cleanup() error {
 }
 
 func (m *NvidiaDevicePlugin) healthcheck() {
-	/*disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
+	disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
 	if disableHealthChecks == "all" {
 		disableHealthChecks = allHealthChecks
 	}
@@ -286,7 +329,7 @@ func (m *NvidiaDevicePlugin) healthcheck() {
 		case dev := <-xids:
 			m.unhealthy(dev)
 		}
-	}*/
+	}
 }
 
 // Serve starts the gRPC server and register the device plugin to Kubelet
