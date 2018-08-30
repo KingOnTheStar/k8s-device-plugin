@@ -13,6 +13,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
+	"sort"
 	"strings"
 )
 
@@ -249,54 +250,7 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 }
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
-	var selectedDevicesIDs []string
-	//selectedDevicesIDs[0] = "GPU-92d93cd6-e41f-6884-6748-3738a97691df"
-	//selectedDevicesIDs[1] = "GPU-7ea160c1-73de-f6f4-1d3d-e34340d85eef"
-	var usableTopoInfo TopoInfo
-	for _, edge := range m.topology.edges {
-		leftPointExist := false
-		rightPointExist := false
-		for _, usableDevID := range request.UsableDevicesIDs {
-			if usableDevID == edge.Dev1UUID {
-				leftPointExist = true
-			}
-			if usableDevID == edge.Dev2UUID {
-				rightPointExist = true
-			}
-		}
-		if leftPointExist && rightPointExist {
-			usableTopoInfo.edges = append(usableTopoInfo.edges, edge)
-		}
-	}
-	usableTopoInfo.TopoEdgeSort()
-	for _, edge := range usableTopoInfo.edges {
-		leftExisted := false
-		rightExisted := false
-		for _, id := range selectedDevicesIDs {
-			if id == edge.Dev1UUID {
-				leftExisted = true
-			}
-			if id == edge.Dev2UUID {
-				rightExisted = true
-			}
-		}
-		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
-			break
-		}
-		if !leftExisted {
-			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev1UUID)
-		}
-		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
-			break
-		}
-		if !rightExisted {
-			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev2UUID)
-		}
-	}
-
-	return &pluginapi.PreAllocateResponse{
-		SelectedDevicesIDs: selectedDevicesIDs,
-	}, nil
+	return m.scheduleByGraphSearching(request)
 }
 
 func (m *NvidiaDevicePlugin) cleanup() error {
@@ -350,4 +304,88 @@ func (m *NvidiaDevicePlugin) Serve() error {
 	log.Println("Registered device plugin with Kubelet")
 
 	return nil
+}
+
+func (m *NvidiaDevicePlugin) scheduleByTopoEdge(request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
+	var selectedDevicesIDs []string
+	// For each edge test weather the devices it connect are usable
+	var usableTopoInfo TopoInfo
+	for _, edge := range m.topology.edges {
+		leftPointExist := false
+		rightPointExist := false
+		for _, usableDevID := range request.UsableDevicesIDs {
+			if usableDevID == edge.Dev1UUID {
+				leftPointExist = true
+			}
+			if usableDevID == edge.Dev2UUID {
+				rightPointExist = true
+			}
+		}
+		if leftPointExist && rightPointExist {
+			usableTopoInfo.edges = append(usableTopoInfo.edges, edge)
+		}
+	}
+	// Sort edges
+	usableTopoInfo.TopoEdgeSort()
+	// Select devices
+	for _, edge := range usableTopoInfo.edges {
+		leftExisted := false
+		rightExisted := false
+		for _, id := range selectedDevicesIDs {
+			if id == edge.Dev1UUID {
+				leftExisted = true
+			}
+			if id == edge.Dev2UUID {
+				rightExisted = true
+			}
+		}
+		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
+			break
+		}
+		if !leftExisted {
+			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev1UUID)
+		}
+		if len(selectedDevicesIDs) >= int(request.DevicesNum) {
+			break
+		}
+		if !rightExisted {
+			selectedDevicesIDs = append(selectedDevicesIDs, edge.Dev2UUID)
+		}
+	}
+
+	return &pluginapi.PreAllocateResponse{
+		SelectedDevicesIDs: selectedDevicesIDs,
+	}, nil
+}
+
+func (m *NvidiaDevicePlugin) scheduleByGraphSearching(request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
+	var selectedDevicesIDs []string
+	// Perpare a dictionary to accelerate searching weather a ID exists.
+	usableIDSet := make(map[string]Empty)
+	for _, usableID := range request.UsableDevicesIDs {
+		usableIDSet[usableID] = Empty{}
+	}
+	// Select out the usable devices.
+	usableDevices := make(ConnectedNodeList, request.DevicesNum)
+	i := 0
+	for k, v := range m.topology.connectGraph {
+		if _, ok := usableIDSet[k]; ok {
+			if i < int(request.DevicesNum) {
+				usableDevices[i] = ConnectedNodePacked{k, v.score}
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	// Sort devices from high to low
+	sort.Sort(usableDevices)
+	// Select
+	for j := 0; j < int(request.DevicesNum); j++ {
+		selectedDevicesIDs = append(selectedDevicesIDs, usableDevices[j].UUID)
+	}
+
+	return &pluginapi.PreAllocateResponse{
+		SelectedDevicesIDs: selectedDevicesIDs,
+	}, nil
 }

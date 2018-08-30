@@ -13,8 +13,23 @@ import (
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
 )
 
+type Empty struct{}
+
+type ConnectedNode struct {
+	score int
+	//connectedDevice []string // No use due to we support every gpus are connected to each other
+}
+
+type ConnectedNodePacked struct {
+	UUID  string
+	score int
+}
+
+type ConnectedNodeList []ConnectedNodePacked
+
 type TopoInfo struct {
-	edges []TopoEdge
+	edges        []TopoEdge
+	connectGraph map[string]*ConnectedNode
 }
 
 type TopoEdge struct {
@@ -29,6 +44,20 @@ func check(err error) {
 	}
 }
 
+// Sort interface for ConnectedNodeList
+func (c ConnectedNodeList) Swap(i, j int) {
+	c[i], c[j] = c[j], c[i]
+}
+
+func (c ConnectedNodeList) Len() int {
+	return len(c)
+}
+
+func (c ConnectedNodeList) Less(i, j int) bool {
+	return c[i].score < c[j].score
+}
+
+// Sort method used for TopoEdge
 func (topo *TopoInfo) TopoEdgeSort() {
 	n := len(topo.edges)
 	if n <= 0 {
@@ -130,7 +159,13 @@ func getDevicesAndTopology() ([]*pluginapi.Device, TopoInfo) {
 	}
 
 	var topo TopoInfo
+	topo.connectGraph = make(map[string]*ConnectedNode)
 	for i := uint(0); i < n; i++ {
+		if _, ok := topo.connectGraph[nvmlDevs[i].UUID]; !ok {
+			topo.connectGraph[nvmlDevs[i].UUID] = &ConnectedNode{
+				score: 0,
+			}
+		}
 		for j := i + 1; j < n; j++ {
 			p2pType, err := nvml.GetP2PLink(nvmlDevs[i], nvmlDevs[j])
 			if err != nil {
@@ -142,6 +177,13 @@ func getDevicesAndTopology() ([]*pluginapi.Device, TopoInfo) {
 				Dev2UUID: nvmlDevs[j].UUID,
 				P2PType:  p2pType,
 			})
+			if _, ok := topo.connectGraph[nvmlDevs[j].UUID]; !ok {
+				topo.connectGraph[nvmlDevs[j].UUID] = &ConnectedNode{
+					score: 0,
+				}
+			}
+			topo.connectGraph[nvmlDevs[i].UUID].score += int(p2pType)
+			topo.connectGraph[nvmlDevs[j].UUID].score += int(p2pType)
 		}
 	}
 
