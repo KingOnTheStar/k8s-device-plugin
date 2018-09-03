@@ -99,7 +99,9 @@ func testGetDevices() []*pluginapi.Device {
 
 // NewNvidiaDevicePlugin returns an initialized NvidiaDevicePlugin
 func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
-	devicesIDsAndHealth, topo := getDevicesAndTopology()
+	devicesIDsAndHealth := testGetDevices()
+	topo := TopoInfo{nil, nil}
+	//devicesIDsAndHealth, topo := getDevicesAndTopology()
 	log.Println("Test topology: ", topo)
 	return &NvidiaDevicePlugin{
 		devs:     devicesIDsAndHealth,
@@ -114,7 +116,7 @@ func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
 func (m *NvidiaDevicePlugin) GetDevicePluginOptions(context.Context, *pluginapi.Empty) (*pluginapi.DevicePluginOptions, error) {
 	return &pluginapi.DevicePluginOptions{
 		PreStartRequired:    false,
-		PreAllocateRequired: true,
+		PreAllocateRequired: false,
 	}, nil
 }
 
@@ -191,7 +193,7 @@ func (m *NvidiaDevicePlugin) Register(kubeletEndpoint, resourceName string) erro
 		ResourceName: resourceName,
 		Options: &pluginapi.DevicePluginOptions{
 			PreStartRequired:    false,
-			PreAllocateRequired: true,
+			PreAllocateRequired: false,
 		},
 	}
 
@@ -250,7 +252,7 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 }
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
-	return m.scheduleByGraphSearching(request)
+	return m.scheduleTestStub(request)
 }
 
 func (m *NvidiaDevicePlugin) cleanup() error {
@@ -262,7 +264,7 @@ func (m *NvidiaDevicePlugin) cleanup() error {
 }
 
 func (m *NvidiaDevicePlugin) healthcheck() {
-	disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
+	/*disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
 	if disableHealthChecks == "all" {
 		disableHealthChecks = allHealthChecks
 	}
@@ -283,7 +285,7 @@ func (m *NvidiaDevicePlugin) healthcheck() {
 		case dev := <-xids:
 			m.unhealthy(dev)
 		}
-	}
+	}*/
 }
 
 // Serve starts the gRPC server and register the device plugin to Kubelet
@@ -383,6 +385,19 @@ func (m *NvidiaDevicePlugin) scheduleByGraphSearching(request *pluginapi.PreAllo
 	// Select
 	for j := 0; j < int(request.DevicesNum); j++ {
 		selectedDevicesIDs = append(selectedDevicesIDs, usableDevices[j].UUID)
+	}
+
+	return &pluginapi.PreAllocateResponse{
+		SelectedDevicesIDs: selectedDevicesIDs,
+	}, nil
+}
+
+func (m *NvidiaDevicePlugin) scheduleTestStub(request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
+	var selectedDevicesIDs []string
+
+	// Select
+	for j := 0; j < int(request.DevicesNum); j++ {
+		selectedDevicesIDs = append(selectedDevicesIDs, request.UsableDevicesIDs[j])
 	}
 
 	return &pluginapi.PreAllocateResponse{
