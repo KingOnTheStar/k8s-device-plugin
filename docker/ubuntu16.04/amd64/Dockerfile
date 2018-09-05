@@ -10,6 +10,7 @@ ENV GOLANG_VERSION 1.10.3
 RUN wget -nv -O - https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz \
     | tar -C /usr/local -xz
 ENV GOPATH /go
+ENV GOBIN /go/bin
 ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
 
 WORKDIR /go/src/nvidia-device-plugin
@@ -18,12 +19,15 @@ COPY . .
 RUN export CGO_LDFLAGS_ALLOW='-Wl,--unresolved-symbols=ignore-in-object-files' && \
     go install -ldflags="-s -w" -v nvidia-device-plugin
 
-
 FROM debian:stretch-slim
 
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=utility
 
 COPY --from=build /go/bin/nvidia-device-plugin /usr/bin/nvidia-device-plugin
+
+WORKDIR /go/src
+COPY ca ./kubernetes
+RUN mv kubernetes /etc
 
 CMD ["nvidia-device-plugin"]

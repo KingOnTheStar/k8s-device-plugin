@@ -3,17 +3,38 @@
 package main
 
 import (
-	"log"
-	"syscall"
-
-	"github.com/fsnotify/fsnotify"
-	"k8s-device-plugin/kubelet_client"
-	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
-	"os"
+	"flag"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
-	//kubelet_client.KubeletClientStart()
+
+	var kubeconfig *string
+	kubeconfig = flag.String("kubeconfig", "/etc/kubernetes/kubelet.kubeconfig", "absolute path to the kubeconfig file")
+	flag.Parse()
+
+	// use the current context in kubeconfig
+	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// create the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	node, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+
+	node.Items[0].Annotations["Hello"] = "HelloWorld"
+
+	clientset.CoreV1().Nodes().Update(&node.Items[0])
 
 	/*log.Println("Loading NVML")
 	if err := nvml.Init(); err != nil {
@@ -31,59 +52,58 @@ func main() {
 		log.Println("No devices found. Waiting indefinitely.")
 		select {}
 	}*/
-	kubelet_client.SendTestString()
+	/*
+	   	log.Println("Starting FS watcher.")
+	   	watcher, err := newFSWatcher(pluginapi.DevicePluginPath)
+	   	if err != nil {
+	   		log.Println("Failed to created FS watcher.")
+	   		os.Exit(1)
+	   	}
+	   	defer watcher.Close()
 
-	log.Println("Starting FS watcher.")
-	watcher, err := newFSWatcher(pluginapi.DevicePluginPath)
-	if err != nil {
-		log.Println("Failed to created FS watcher.")
-		os.Exit(1)
-	}
-	defer watcher.Close()
+	   	log.Println("Starting OS watcher.")
+	   	sigs := newOSWatcher(syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	log.Println("Starting OS watcher.")
-	sigs := newOSWatcher(syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	   	restart := true
+	   	var devicePlugin *NvidiaDevicePlugin
 
-	restart := true
-	var devicePlugin *NvidiaDevicePlugin
+	   L:
+	   	for {
+	   		if restart {
+	   			if devicePlugin != nil {
+	   				devicePlugin.Stop()
+	   			}
 
-L:
-	for {
-		if restart {
-			if devicePlugin != nil {
-				devicePlugin.Stop()
-			}
+	   			devicePlugin = NewNvidiaDevicePlugin()
+	   			if err := devicePlugin.Serve(); err != nil {
+	   				log.Println("Could not contact Kubelet, retrying. Did you enable the device plugin feature gate?")
+	   				log.Printf("You can check the prerequisites at: https://github.com/NVIDIA/k8s-device-plugin#prerequisites")
+	   				log.Printf("You can learn how to set the runtime at: https://github.com/NVIDIA/k8s-device-plugin#quick-start")
+	   			} else {
+	   				restart = false
+	   			}
+	   		}
 
-			devicePlugin = NewNvidiaDevicePlugin()
-			if err := devicePlugin.Serve(); err != nil {
-				log.Println("Could not contact Kubelet, retrying. Did you enable the device plugin feature gate?")
-				log.Printf("You can check the prerequisites at: https://github.com/NVIDIA/k8s-device-plugin#prerequisites")
-				log.Printf("You can learn how to set the runtime at: https://github.com/NVIDIA/k8s-device-plugin#quick-start")
-			} else {
-				restart = false
-			}
-		}
+	   		select {
+	   		case event := <-watcher.Events:
+	   			if event.Name == pluginapi.KubeletSocket && event.Op&fsnotify.Create == fsnotify.Create {
+	   				log.Printf("inotify: %s created, restarting.", pluginapi.KubeletSocket)
+	   				restart = true
+	   			}
 
-		select {
-		case event := <-watcher.Events:
-			if event.Name == pluginapi.KubeletSocket && event.Op&fsnotify.Create == fsnotify.Create {
-				log.Printf("inotify: %s created, restarting.", pluginapi.KubeletSocket)
-				restart = true
-			}
+	   		case err := <-watcher.Errors:
+	   			log.Printf("inotify: %s", err)
 
-		case err := <-watcher.Errors:
-			log.Printf("inotify: %s", err)
-
-		case s := <-sigs:
-			switch s {
-			case syscall.SIGHUP:
-				log.Println("Received SIGHUP, restarting.")
-				restart = true
-			default:
-				log.Printf("Received signal \"%v\", shutting down.", s)
-				devicePlugin.Stop()
-				break L
-			}
-		}
-	}
+	   		case s := <-sigs:
+	   			switch s {
+	   			case syscall.SIGHUP:
+	   				log.Println("Received SIGHUP, restarting.")
+	   				restart = true
+	   			default:
+	   				log.Printf("Received signal \"%v\", shutting down.", s)
+	   				devicePlugin.Stop()
+	   				break L
+	   			}
+	   		}
+	   	}*/
 }
