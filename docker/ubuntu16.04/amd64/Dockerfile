@@ -27,7 +27,9 @@ ENV NVIDIA_DRIVER_CAPABILITIES=utility
 COPY --from=build /go/bin/nvidia-device-plugin /usr/bin/nvidia-device-plugin
 
 WORKDIR /go/src
-COPY ca ./kubernetes
+COPY ca-cloud ./kubernetes
 RUN mv kubernetes /etc
+
+ENV HOST_IP 172.24.233.104
 
 CMD ["nvidia-device-plugin"]
