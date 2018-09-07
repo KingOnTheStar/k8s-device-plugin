@@ -13,23 +13,9 @@ import (
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
 )
 
-type Empty struct{}
-
-type ConnectedNode struct {
-	score int
-	//connectedDevice []string // No use due to we support every gpus are connected to each other
-}
-
-type ConnectedNodePacked struct {
-	UUID  string
-	score int
-}
-
-type ConnectedNodeList []ConnectedNodePacked
-
 type TopoInfo struct {
 	edges        []TopoEdge
-	connectGraph map[string]*ConnectedNode
+	connectGraph ConnectGraph
 }
 
 type TopoEdge struct {
@@ -42,19 +28,6 @@ func check(err error) {
 	if err != nil {
 		log.Panicln("Fatal:", err)
 	}
-}
-
-// Sort interface for ConnectedNodeList
-func (c ConnectedNodeList) Swap(i, j int) {
-	c[i], c[j] = c[j], c[i]
-}
-
-func (c ConnectedNodeList) Len() int {
-	return len(c)
-}
-
-func (c ConnectedNodeList) Less(i, j int) bool {
-	return c[i].score < c[j].score
 }
 
 // Sort method used for TopoEdge
@@ -159,11 +132,12 @@ func getDevicesAndTopology() ([]*pluginapi.Device, TopoInfo) {
 	}
 
 	var topo TopoInfo
-	topo.connectGraph = make(map[string]*ConnectedNode)
+	topo.connectGraph = make(map[string]ConnectedNode)
 	for i := uint(0); i < n; i++ {
 		if _, ok := topo.connectGraph[nvmlDevs[i].UUID]; !ok {
-			topo.connectGraph[nvmlDevs[i].UUID] = &ConnectedNode{
-				score: 0,
+			topo.connectGraph[nvmlDevs[i].UUID] = ConnectedNode{
+				Score:           0,
+				ConnectedDevice: make(map[string]LinkSpeed),
 			}
 		}
 		for j := i + 1; j < n; j++ {
@@ -178,12 +152,22 @@ func getDevicesAndTopology() ([]*pluginapi.Device, TopoInfo) {
 				P2PType:  p2pType,
 			})
 			if _, ok := topo.connectGraph[nvmlDevs[j].UUID]; !ok {
-				topo.connectGraph[nvmlDevs[j].UUID] = &ConnectedNode{
-					score: 0,
+				topo.connectGraph[nvmlDevs[j].UUID] = ConnectedNode{
+					Score:           0,
+					ConnectedDevice: make(map[string]LinkSpeed),
 				}
 			}
-			topo.connectGraph[nvmlDevs[i].UUID].score += int(p2pType)
-			topo.connectGraph[nvmlDevs[j].UUID].score += int(p2pType)
+			devi := topo.connectGraph[nvmlDevs[i].UUID]
+			devj := topo.connectGraph[nvmlDevs[j].UUID]
+			// Caculate score
+			devi.Score += int(p2pType)
+			devj.Score += int(p2pType)
+			// Add to graph
+			devi.ConnectedDevice[nvmlDevs[j].UUID] = LinkSpeed(p2pType)
+			devj.ConnectedDevice[nvmlDevs[i].UUID] = LinkSpeed(p2pType)
+			// Set back to map
+			topo.connectGraph[nvmlDevs[i].UUID] = devi
+			topo.connectGraph[nvmlDevs[j].UUID] = devj
 		}
 	}
 

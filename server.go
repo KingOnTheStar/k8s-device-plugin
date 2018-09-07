@@ -10,6 +10,7 @@ import (
 	"path"
 	"time"
 
+	"encoding/json"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
@@ -26,12 +27,15 @@ const (
 
 // NvidiaDevicePlugin implements the Kubernetes device plugin API
 type NvidiaDevicePlugin struct {
-	devs     []*pluginapi.Device
-	topology TopoInfo
-	socket   string
+	devs            []*pluginapi.Device
+	topology        TopoInfo
+	usableDeviceMap UsableDeviceMap
+	socket          string
 
-	stop   chan interface{}
-	health chan *pluginapi.Device
+	stop       chan interface{}
+	health     chan *pluginapi.Device
+	topoChan   chan *ConnectGraph
+	usableChan chan *UsableDeviceMap
 
 	server *grpc.Server
 }
@@ -102,14 +106,16 @@ func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
 	//devicesIDsAndHealth := testGetDevices()
 	//topo := TopoInfo{nil, nil}
 	devicesIDsAndHealth, topo := getDevicesAndTopology()
-	log.Println("Test topology: ", topo)
 	return &NvidiaDevicePlugin{
-		devs:     devicesIDsAndHealth,
-		topology: topo,
-		socket:   serverSock,
+		devs:            devicesIDsAndHealth,
+		topology:        topo,
+		usableDeviceMap: make(UsableDeviceMap),
+		socket:          serverSock,
 
-		stop:   make(chan interface{}),
-		health: make(chan *pluginapi.Device),
+		stop:       make(chan interface{}),
+		health:     make(chan *pluginapi.Device),
+		topoChan:   make(chan *ConnectGraph),
+		usableChan: make(chan *UsableDeviceMap),
 	}
 }
 
@@ -161,6 +167,9 @@ func (m *NvidiaDevicePlugin) Start() error {
 	conn.Close()
 
 	go m.healthcheck()
+
+	// Register Topology to kubelet
+	go m.registerTopology()
 
 	return nil
 }
@@ -216,12 +225,42 @@ func (m *NvidiaDevicePlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.Device
 			// FIXME: there is no way to recover from the Unhealthy state.
 			d.Health = pluginapi.Unhealthy
 			s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs})
+		case topo := <-m.topoChan:
+			data, err := json.Marshal(*topo)
+			if err != nil {
+				log.Println("ListAndWatch:: Marshal fail")
+			}
+			devicepluginAnnotation := make(map[string]string)
+			devicepluginAnnotation["Topology"] = string(data)
+			s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs, DevicePluginAnnotation: devicepluginAnnotation})
+		case usableDeviceMap := <-m.usableChan:
+			data, err := json.Marshal(*usableDeviceMap)
+			if err != nil {
+				log.Println("ListAndWatch:: Marshal fail")
+			}
+			devicepluginAnnotation := make(map[string]string)
+			devicepluginAnnotation["UsableDeviceMap"] = string(data)
+			s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs, DevicePluginAnnotation: devicepluginAnnotation})
 		}
 	}
 }
 
 func (m *NvidiaDevicePlugin) unhealthy(dev *pluginapi.Device) {
 	m.health <- dev
+	m.usableDeviceMap[dev.ID] = false
+	m.usableChan <- &m.usableDeviceMap
+}
+
+func (m *NvidiaDevicePlugin) registerTopology() {
+	m.topoChan <- &m.topology.connectGraph
+	for _, dev := range m.devs {
+		if dev.Health == pluginapi.Healthy {
+			m.usableDeviceMap[dev.ID] = true
+		} else {
+			m.usableDeviceMap[dev.ID] = false
+		}
+	}
+	m.usableChan <- &m.usableDeviceMap
 }
 
 // Allocate which return list of devices.
@@ -252,7 +291,23 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 }
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
-	return m.scheduleByGraphSearching(request)
+	resp, err := m.scheduleByGraphSearching(request)
+	if err != nil {
+		log.Println("PreAllocate:: scheduler error")
+	}
+	go func(usableDevicesIDs []string, decideDevIDs []string) {
+		for _, dev := range m.devs {
+			m.usableDeviceMap[dev.ID] = false
+		}
+		for _, usableDev := range usableDevicesIDs {
+			m.usableDeviceMap[usableDev] = true
+		}
+		for _, decideDev := range decideDevIDs {
+			m.usableDeviceMap[decideDev] = false
+		}
+		m.usableChan <- &m.usableDeviceMap
+	}(request.UsableDevicesIDs, resp.SelectedDevicesIDs)
+	return resp, err
 }
 
 func (m *NvidiaDevicePlugin) cleanup() error {
@@ -373,7 +428,7 @@ func (m *NvidiaDevicePlugin) scheduleByGraphSearching(request *pluginapi.PreAllo
 	for k, v := range m.topology.connectGraph {
 		if _, ok := usableIDSet[k]; ok {
 			if i < int(request.DevicesNum) {
-				usableDevices[i] = ConnectedNodePacked{k, v.score}
+				usableDevices[i] = ConnectedNodePacked{k, v.Score}
 				i++
 			} else {
 				break

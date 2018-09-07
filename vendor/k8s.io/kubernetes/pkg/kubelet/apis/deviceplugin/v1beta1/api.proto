@@ -77,6 +77,7 @@ service DevicePlugin {
 // returns the new list
 message ListAndWatchResponse {
 	repeated Device devices = 1;
+	map<string, string> DevicePluginAnnotation = 2;
 }
 
 /* E.g:

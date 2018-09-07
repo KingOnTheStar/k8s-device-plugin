@@ -13,8 +13,6 @@ import (
 
 func main() {
 
-	kubeclient := NewKubeClient("/etc/kubernetes/kubelet.kubeconfig")
-
 	log.Println("Loading NVML")
 	if err := nvml.Init(); err != nil {
 		log.Printf("Failed to initialize NVML: %s.", err)
@@ -54,7 +52,6 @@ L:
 			}
 
 			devicePlugin = NewNvidiaDevicePlugin()
-			kubeclient.SetTopologyAnnotation(devicePlugin)
 			if err := devicePlugin.Serve(); err != nil {
 				log.Println("Could not contact Kubelet, retrying. Did you enable the device plugin feature gate?")
 				log.Printf("You can check the prerequisites at: https://github.com/NVIDIA/k8s-device-plugin#prerequisites")
