@@ -29,6 +29,8 @@ message DevicePluginOptions {
 	bool pre_start_required = 1;
 	// Wheather the Plugin needs use its own scheduler before allocating
 	bool pre_allocate_required = 2;
+	// Indicates if pod annotations are passed to PreAllocate and Allocate call
+	bool pod_annotations_required = 3;
 }
 
 message RegisterRequest {
@@ -110,6 +112,7 @@ message PreStartContainerResponse {
 message PreAllocateRequest {
 	int64 devicesNum = 1;
 	repeated string usableDevicesIDs = 2;
+	map<string, string> podAnnotation = 3;
 }
 
 // PreAllocate just a list of devices IDs, kubelet will then call Allocate

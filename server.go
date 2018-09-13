@@ -103,9 +103,9 @@ func testGetDevices() []*pluginapi.Device {
 
 // NewNvidiaDevicePlugin returns an initialized NvidiaDevicePlugin
 func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
-	//devicesIDsAndHealth := testGetDevices()
-	//topo := TopoInfo{nil, nil}
-	devicesIDsAndHealth, topo := getDevicesAndTopology()
+	devicesIDsAndHealth := testGetDevices()
+	topo := TopoInfo{nil, nil}
+	//devicesIDsAndHealth, topo := getDevicesAndTopology()
 	return &NvidiaDevicePlugin{
 		devs:            devicesIDsAndHealth,
 		topology:        topo,
@@ -121,8 +121,9 @@ func NewNvidiaDevicePlugin() *NvidiaDevicePlugin {
 
 func (m *NvidiaDevicePlugin) GetDevicePluginOptions(context.Context, *pluginapi.Empty) (*pluginapi.DevicePluginOptions, error) {
 	return &pluginapi.DevicePluginOptions{
-		PreStartRequired:    false,
-		PreAllocateRequired: true,
+		PreStartRequired:       false,
+		PreAllocateRequired:    true,
+		PodAnnotationsRequired: true,
 	}, nil
 }
 
@@ -201,8 +202,9 @@ func (m *NvidiaDevicePlugin) Register(kubeletEndpoint, resourceName string) erro
 		Endpoint:     path.Base(m.socket),
 		ResourceName: resourceName,
 		Options: &pluginapi.DevicePluginOptions{
-			PreStartRequired:    false,
-			PreAllocateRequired: true,
+			PreStartRequired:       false,
+			PreAllocateRequired:    true,
+			PodAnnotationsRequired: true,
 		},
 	}
 
@@ -231,7 +233,7 @@ func (m *NvidiaDevicePlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.Device
 				log.Println("ListAndWatch:: Marshal fail")
 			}
 			devicepluginAnnotation := make(map[string]string)
-			devicepluginAnnotation["Topology"] = string(data)
+			devicepluginAnnotation["node.dm.alpha.kubernetes.io/Topology"] = string(data)
 			s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs, DevicePluginAnnotation: devicepluginAnnotation})
 		case usableDeviceMap := <-m.usableChan:
 			data, err := json.Marshal(*usableDeviceMap)
@@ -239,7 +241,7 @@ func (m *NvidiaDevicePlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.Device
 				log.Println("ListAndWatch:: Marshal fail")
 			}
 			devicepluginAnnotation := make(map[string]string)
-			devicepluginAnnotation["UsableDeviceMap"] = string(data)
+			devicepluginAnnotation["node.dm.alpha.kubernetes.io/UsableDeviceMap"] = string(data)
 			s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs, DevicePluginAnnotation: devicepluginAnnotation})
 		}
 	}
@@ -291,7 +293,7 @@ func (m *NvidiaDevicePlugin) PreStartContainer(context.Context, *pluginapi.PreSt
 }
 
 func (m *NvidiaDevicePlugin) PreAllocate(ctx context.Context, request *pluginapi.PreAllocateRequest) (*pluginapi.PreAllocateResponse, error) {
-	resp, err := m.scheduleByGraphSearching(request)
+	resp, err := m.scheduleTestStub(request)
 	if err != nil {
 		log.Println("PreAllocate:: scheduler error")
 	}
@@ -319,7 +321,7 @@ func (m *NvidiaDevicePlugin) cleanup() error {
 }
 
 func (m *NvidiaDevicePlugin) healthcheck() {
-	disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
+	/*disableHealthChecks := strings.ToLower(os.Getenv(envDisableHealthChecks))
 	if disableHealthChecks == "all" {
 		disableHealthChecks = allHealthChecks
 	}
@@ -340,7 +342,7 @@ func (m *NvidiaDevicePlugin) healthcheck() {
 		case dev := <-xids:
 			m.unhealthy(dev)
 		}
-	}
+	}*/
 }
 
 // Serve starts the gRPC server and register the device plugin to Kubelet
